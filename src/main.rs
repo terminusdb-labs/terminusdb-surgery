@@ -1,7 +1,6 @@
 use clap::*;
-use std::io;
 use terminus_store::{
-    storage::*,
+    storage::{archive::ArchiveLayerStore, *},
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
     Layer,
 };
@@ -32,8 +31,10 @@ enum Commands {
         /// The node
         id: String,
         /// Layer in which to start the lookup
+        #[arg(short = 'l', long = "layer")]
         layer: Option<String>,
         /// Label in which to start the lookup
+        #[arg(short = 'g', long = "label")]
         label: Option<String>,
         /// The workdir to store mappings in
         #[arg(short = 's', long = "store")]
@@ -41,8 +42,10 @@ enum Commands {
     },
     /// Node count of layer
     NodeCount {
+        #[arg(short = 'l', long = "layer")]
         layer: Option<String>,
         /// Label in which to start the lookup
+        #[arg(short = 'g', long = "label")]
         label: Option<String>,
         /// The workdir to store mappings in
         #[arg(short = 's', long = "store")]
@@ -79,7 +82,15 @@ fn id_node(store: &str, layer: Option<String>, label: Option<String>, id: &str) 
     layer.id_subject(id.parse().unwrap())
 }
 
-fn main() -> io::Result<()> {
+async fn node_count(store: &str, layer: Option<String>, label: Option<String>) -> Option<u64> {
+    let archive_store = ArchiveLayerStore::new(store);
+    let store = open_sync_archive_store(store);
+    let layer_name = open_layer_or_label(store, layer, label).name();
+    archive_store.get_node_count(layer_name).await.unwrap()
+}
+
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
@@ -95,7 +106,6 @@ fn main() -> io::Result<()> {
                 Some(id) => println!("{id}"),
                 None => println!("None"),
             };
-            Ok(())
         }
         Commands::IdNode {
             id,
@@ -104,17 +114,23 @@ fn main() -> io::Result<()> {
             store,
         } => {
             let store = store.unwrap_or_else(|| ".".to_string());
-            let id_for_node = id_node(&store, layer, label, &id);
-            match id_for_node {
+            let node_for_id = id_node(&store, layer, label, &id);
+            match node_for_id {
                 Some(id) => println!("{id}"),
                 None => println!("None"),
             };
-            Ok(())
         }
         Commands::NodeCount {
             layer,
             label,
             store,
-        } => todo!(),
+        } => {
+            let store = store.unwrap_or_else(|| ".".to_string());
+            let node_count = node_count(&store, layer, label);
+            match node_count.await {
+                Some(id) => println!("{id}"),
+                None => println!("None"),
+            };
+        }
     }
 }

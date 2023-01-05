@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 clap = {version="4.0", features=["derive"]}
 terminus-store = {package = "terminus-store", path = "../terminusdb-store"}
+tokio = {version = "1.0", features = ["full"]}
