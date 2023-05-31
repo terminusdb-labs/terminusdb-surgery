@@ -1,12 +1,18 @@
+use std::{io::Read, path::PathBuf};
+
+use bytes::Bytes;
 use clap::*;
 use terminus_store::{
     storage::{
-        archive::{ArchiveLayerStore, DirectoryArchiveBackend},
+        archive::{ArchiveHeader, ArchiveLayerStore, DirectoryArchiveBackend},
+        consts::LayerFileEnum,
         *,
     },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
     Layer,
 };
+
+use num::FromPrimitive;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -53,6 +59,14 @@ enum Commands {
         /// The workdir to store mappings in
         #[arg(short = 's', long = "store")]
         store: Option<String>,
+    },
+    /// Parse a larch header from a file
+    ParseHeader {
+        /// The file to parse the header from
+        file_name: String,
+        /// whether to sort by size
+        #[arg(short, long)]
+        sort: bool,
     },
 }
 
@@ -136,5 +150,33 @@ async fn main() {
                 None => println!("None"),
             };
         }
+        Commands::ParseHeader { file_name, sort } => {
+            parse_and_print_header(file_name, sort);
+        }
+    }
+}
+
+fn parse_and_print_header<P: Into<PathBuf>>(file_name: P, sort: bool) {
+    let mut file = std::fs::File::open(file_name.into()).unwrap();
+    let mut data = Vec::new();
+    file.read_to_end(&mut data).unwrap();
+
+    let (header, _) = ArchiveHeader::parse(Bytes::from(data));
+    let mut result = Vec::new();
+    // annoying code to loop over the segments
+    for i in 0..=(LayerFileEnum::Rollup as usize) {
+        let file_type = LayerFileEnum::from_usize(i).unwrap();
+        if let Some(range) = header.range_for(file_type) {
+            let file_name = format!("{file_type:?}");
+            result.push((file_name, range.start, range.end, range.len()));
+        }
+    }
+    if sort {
+        result.sort_by_key(|x| x.3);
+        result.reverse();
+    }
+
+    for (file_name, start, end, len) in result {
+        println!("{file_name: >50}:\t{: >10}..{: <10} ({})", start, end, len);
     }
 }
