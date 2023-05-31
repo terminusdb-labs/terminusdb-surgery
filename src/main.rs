@@ -1,6 +1,9 @@
 use clap::*;
 use terminus_store::{
-    storage::{archive::ArchiveLayerStore, *},
+    storage::{
+        archive::{ArchiveLayerStore, DirectoryArchiveBackend},
+        *,
+    },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
     Layer,
 };
@@ -71,20 +74,21 @@ fn open_layer_or_label(
 }
 
 fn node_id(store: &str, layer: Option<String>, label: Option<String>, node: &str) -> Option<u64> {
-    let store = open_sync_archive_store(store);
+    let store = open_sync_archive_store(store, 512);
     let layer = open_layer_or_label(store, layer, label);
     layer.subject_id(node)
 }
 
 fn id_node(store: &str, layer: Option<String>, label: Option<String>, id: &str) -> Option<String> {
-    let store = open_sync_archive_store(store);
+    let store = open_sync_archive_store(store, 512);
     let layer = open_layer_or_label(store, layer, label);
     layer.id_subject(id.parse().unwrap())
 }
 
 async fn node_count(store: &str, layer: Option<String>, label: Option<String>) -> Option<u64> {
-    let archive_store = ArchiveLayerStore::new(store);
-    let store = open_sync_archive_store(store);
+    let backend = DirectoryArchiveBackend::new(store.into());
+    let archive_store = ArchiveLayerStore::new(backend.clone(), backend);
+    let store = open_sync_archive_store(store, 512);
     let layer_name = open_layer_or_label(store, layer, label).name();
     archive_store.get_node_count(layer_name).await.unwrap()
 }
