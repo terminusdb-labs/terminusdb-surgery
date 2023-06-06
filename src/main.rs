@@ -1,18 +1,25 @@
-use std::{io::Read, path::PathBuf};
+use std::{
+    io::{self, Read, SeekFrom},
+    path::PathBuf,
+};
 
 use bytes::Bytes;
 use clap::*;
+use futures::StreamExt;
 use terminus_store::{
     storage::{
-        archive::{ArchiveHeader, ArchiveLayerStore, DirectoryArchiveBackend},
+        archive::{
+            ArchiveHeader, ArchiveLayerStore, ArchiveSliceReader, DirectoryArchiveBackend,
+        },
         consts::LayerFileEnum,
         *,
     },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
-    Layer,
+    Layer, structure::stream::TfcDictStream,
 };
 
 use num::FromPrimitive;
+use tokio::io::AsyncSeekExt;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -68,6 +75,19 @@ enum Commands {
         #[arg(short, long)]
         sort: bool,
     },
+    /// Print dicts
+    PrintDict {
+        file_name: String,
+        #[arg(value_enum)]
+        dict_type: DictType,
+    },
+}
+
+#[derive(ValueEnum, Clone, PartialEq, Eq)]
+enum DictType {
+    Nodes,
+    Predicates,
+    Values,
 }
 
 fn open_layer_or_label(
@@ -105,6 +125,38 @@ async fn node_count(store: &str, layer: Option<String>, label: Option<String>) -
     let store = open_sync_archive_store(store, 512);
     let layer_name = open_layer_or_label(store, layer, label).name();
     archive_store.get_node_count(layer_name).await.unwrap()
+}
+
+async fn open_slice(
+    file_name: PathBuf,
+    file_type: LayerFileEnum,
+) -> io::Result<ArchiveSliceReader> {
+    let mut reader = tokio::fs::File::open(file_name).await?;
+    let header = ArchiveHeader::parse_from_reader(&mut reader).await?;
+
+    let range = header.range_for(file_type).unwrap();
+    let remaining = range.len();
+    reader.seek(SeekFrom::Current((range.start) as i64)).await?;
+
+    Ok(ArchiveSliceReader::new(reader, remaining))
+}
+
+async fn print_dict(file_name: PathBuf, t: DictType) -> std::io::Result<()> {
+    let file_type = match t {
+        DictType::Nodes => LayerFileEnum::NodeDictionaryBlocks,
+        DictType::Predicates => LayerFileEnum::PredicateDictionaryBlocks,
+        DictType::Values => LayerFileEnum::ValueDictionaryBlocks,
+    };
+    let reader = open_slice(file_name, file_type).await?;
+
+    let mut stream = TfcDictStream::new(reader).enumerate();
+    while let Some((ix, element)) = stream.next().await {
+        let (element, _) =
+            element.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        println!("{}: {:?}", ix + 1, element.to_bytes());
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -153,6 +205,10 @@ async fn main() {
         Commands::ParseHeader { file_name, sort } => {
             parse_and_print_header(file_name, sort);
         }
+        Commands::PrintDict {
+            file_name,
+            dict_type,
+        } => print_dict(file_name.into(), dict_type).await.unwrap(),
     }
 }
 

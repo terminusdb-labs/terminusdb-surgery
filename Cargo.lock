@@ -1046,6 +1046,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "clap",
+ "futures",
  "num",
  "terminus-store",
  "tokio",
