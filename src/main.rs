@@ -8,18 +8,17 @@ use clap::*;
 use futures::StreamExt;
 use terminus_store::{
     storage::{
-        archive::{
-            ArchiveHeader, ArchiveLayerStore, ArchiveSliceReader, DirectoryArchiveBackend,
-        },
-        consts::LayerFileEnum,
+        archive::{ArchiveHeader, ArchiveLayerStore, ArchiveSliceReader, DirectoryArchiveBackend},
+        consts::{LayerFileEnum, FILENAME_ENUM_MAP},
         *,
     },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
-    Layer, structure::stream::TfcDictStream,
+    structure::{stream::TfcDictStream, LogArray},
+    Layer,
 };
 
 use num::FromPrimitive;
-use tokio::io::AsyncSeekExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -80,6 +79,19 @@ enum Commands {
         file_name: String,
         #[arg(value_enum)]
         dict_type: DictType,
+    },
+    /// Validate LogArray
+    ValidateLogArray {
+        file_name: String,
+        /// Whether the header is at the start or at the end of the
+        /// logarray. Default is start (false).
+        #[arg(short, long, default_value_t = false)]
+        header_first: bool,
+    },
+    /// Extract a file from an archive
+    Extract {
+        layer_file_name: String,
+        file_name: String,
     },
 }
 
@@ -159,6 +171,37 @@ async fn print_dict(file_name: PathBuf, t: DictType) -> std::io::Result<()> {
     Ok(())
 }
 
+async fn validate_logarray(file_name: PathBuf, header_first: bool) -> std::io::Result<()> {
+    let mut file = tokio::fs::File::open(file_name).await?;
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents).await?;
+    let contents = Bytes::from(contents);
+
+    let _logarray = if header_first {
+        LogArray::parse_header_first(contents).unwrap().0
+    } else {
+        LogArray::parse(contents).unwrap()
+    };
+    Ok(())
+}
+
+async fn extract_file(layer_path: PathBuf, file_name: &str) -> std::io::Result<()> {
+    let mut file = tokio::fs::File::open(layer_path).await?;
+    let header = ArchiveHeader::parse_from_reader(&mut file).await?;
+    let file_type = FILENAME_ENUM_MAP[file_name];
+    if let Some(range) = header.range_for(file_type) {
+        file.seek(SeekFrom::Current(range.start as i64)).await?;
+        let mut reader = ArchiveSliceReader::new(file, range.len());
+        let mut output = tokio::io::stdout();
+        tokio::io::copy(&mut reader, &mut output).await?;
+        output.flush().await?;
+    } else {
+        panic!("layer did not contain {file_name}");
+    }
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -209,6 +252,18 @@ async fn main() {
             file_name,
             dict_type,
         } => print_dict(file_name.into(), dict_type).await.unwrap(),
+        Commands::ValidateLogArray {
+            file_name,
+            header_first,
+        } => validate_logarray(file_name.into(), header_first)
+            .await
+            .unwrap(),
+        Commands::Extract {
+            layer_file_name,
+            file_name,
+        } => extract_file(layer_file_name.into(), &file_name)
+            .await
+            .unwrap(),
     }
 }
 
