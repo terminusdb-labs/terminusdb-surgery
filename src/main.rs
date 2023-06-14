@@ -7,9 +7,11 @@ use bytes::Bytes;
 use clap::*;
 use futures::StreamExt;
 use terminus_store::{
+    layer::builder::build_object_index_from_direct_files,
     storage::{
         archive::{ArchiveHeader, ArchiveLayerStore, ArchiveSliceReader, DirectoryArchiveBackend},
         consts::{LayerFileEnum, FILENAME_ENUM_MAP},
+        directory::FileBackedStore,
         *,
     },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
@@ -92,6 +94,14 @@ enum Commands {
     Extract {
         layer_file_name: String,
         file_name: String,
+    },
+    /// Build an object index file set from input files
+    BuildObjectIndex {
+        sp_o_nums_file: String,
+        sp_o_bits_file: String,
+        o_ps_dir: String,
+        #[arg(long)]
+        objects_file: Option<String>,
     },
 }
 
@@ -202,6 +212,45 @@ async fn extract_file(layer_path: PathBuf, file_name: &str) -> std::io::Result<(
     Ok(())
 }
 
+async fn build_object_index(
+    sp_o_nums_file: String,
+    sp_o_bits_file: String,
+    o_ps_dir: String,
+    objects_file: Option<String>,
+) -> io::Result<()> {
+    let o_ps_dir_path: PathBuf = o_ps_dir.into();
+    tokio::fs::create_dir_all(&o_ps_dir_path).await?;
+
+    let sp_o_nums_file = FileBackedStore::new(sp_o_nums_file);
+    let sp_o_bits_file = FileBackedStore::new(sp_o_bits_file);
+    let objects_file = objects_file.map(|p| FileBackedStore::new(p));
+
+    let mut o_ps_nums_path = o_ps_dir_path.clone();
+    o_ps_nums_path.push("nums");
+    let mut o_ps_bits_path = o_ps_dir_path.clone();
+    o_ps_bits_path.push("nums");
+    let mut o_ps_bit_index_blocks_path = o_ps_dir_path.clone();
+    o_ps_bit_index_blocks_path.push("bit_index_blocks");
+    let mut o_ps_bit_index_sblocks_path = o_ps_dir_path.clone();
+    o_ps_bit_index_sblocks_path.push("bit_index_sblocks");
+
+    let o_ps_nums_file = FileBackedStore::new(o_ps_nums_path);
+    let o_ps_bits_file = FileBackedStore::new(o_ps_bits_path);
+    let o_ps_blocks_file = FileBackedStore::new(o_ps_bit_index_blocks_path);
+    let o_ps_sblocks_file = FileBackedStore::new(o_ps_bit_index_sblocks_path);
+    let o_ps_files = AdjacencyListFiles {
+        bitindex_files: BitIndexFiles {
+            bits_file: o_ps_bits_file,
+            blocks_file: o_ps_blocks_file,
+            sblocks_file: o_ps_sblocks_file,
+        },
+        nums_file: o_ps_nums_file,
+    };
+
+    build_object_index_from_direct_files(sp_o_nums_file, sp_o_bits_file, o_ps_files, objects_file)
+        .await
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -262,6 +311,14 @@ async fn main() {
             layer_file_name,
             file_name,
         } => extract_file(layer_file_name.into(), &file_name)
+            .await
+            .unwrap(),
+        Commands::BuildObjectIndex {
+            sp_o_nums_file,
+            sp_o_bits_file,
+            o_ps_dir,
+            objects_file,
+        } => build_object_index(sp_o_nums_file, sp_o_bits_file, o_ps_dir, objects_file)
             .await
             .unwrap(),
     }
