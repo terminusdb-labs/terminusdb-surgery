@@ -7,7 +7,7 @@ use bytes::Bytes;
 use clap::*;
 use futures::StreamExt;
 use terminus_store::{
-    layer::builder::build_object_index_from_direct_files,
+    layer::builder::{self, build_object_index_from_direct_files},
     storage::{
         archive::{ArchiveHeader, ArchiveLayerStore, ArchiveSliceReader, DirectoryArchiveBackend},
         consts::{LayerFileEnum, FILENAME_ENUM_MAP},
@@ -102,6 +102,11 @@ enum Commands {
         o_ps_dir: String,
         #[arg(long)]
         objects_file: Option<String>,
+    },
+    /// Build a predicate index from the given s_p nums file
+    BuildPredicateIndex {
+        s_p_nums_file: String,
+        predicate_index_dir: String,
     },
 }
 
@@ -251,6 +256,29 @@ async fn build_object_index(
         .await
 }
 
+async fn build_predicate_index(
+    s_p_nums_file: String,
+    predicate_index_dir: String,
+) -> io::Result<()> {
+    let predicate_index_dir_path: PathBuf = predicate_index_dir.into();
+    tokio::fs::create_dir_all(&predicate_index_dir_path).await?;
+
+    let s_p_nums_file = FileBackedStore::new(s_p_nums_file);
+    let mut wavelet_bits_path = predicate_index_dir_path.clone();
+    wavelet_bits_path.push("bits");
+    let mut wavelet_blocks_path = predicate_index_dir_path.clone();
+    wavelet_blocks_path.push("blocks");
+    let mut wavelet_sblocks_path = predicate_index_dir_path.clone();
+    wavelet_sblocks_path.push("sblocks");
+
+    let wavelet_bits = FileBackedStore::new(wavelet_bits_path);
+    let wavelet_blocks = FileBackedStore::new(wavelet_blocks_path);
+    let wavelet_sblocks = FileBackedStore::new(wavelet_sblocks_path);
+
+    builder::build_predicate_index(s_p_nums_file, wavelet_bits, wavelet_blocks, wavelet_sblocks)
+        .await
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -319,6 +347,12 @@ async fn main() {
             o_ps_dir,
             objects_file,
         } => build_object_index(sp_o_nums_file, sp_o_bits_file, o_ps_dir, objects_file)
+            .await
+            .unwrap(),
+        Commands::BuildPredicateIndex {
+            s_p_nums_file,
+            predicate_index_dir,
+        } => build_predicate_index(s_p_nums_file, predicate_index_dir)
             .await
             .unwrap(),
     }
