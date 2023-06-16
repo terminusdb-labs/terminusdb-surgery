@@ -15,7 +15,7 @@ use terminus_store::{
         *,
     },
     store::sync::{open_sync_archive_store, SyncStore, SyncStoreLayer},
-    structure::{stream::TfcDictStream, LogArray},
+    structure::{stream::TfcDictStream, LogArray, parse_control_word},
     Layer,
 };
 
@@ -108,6 +108,10 @@ enum Commands {
         s_p_nums_file: String,
         predicate_index_dir: String,
     },
+    /// Return a triple count of the given layer
+    TripleCount {
+        layer_file: String
+    }
 }
 
 #[derive(ValueEnum, Clone, PartialEq, Eq)]
@@ -153,6 +157,20 @@ async fn node_count(store: &str, layer: Option<String>, label: Option<String>) -
     let layer_name = open_layer_or_label(store, layer, label).name();
     archive_store.get_node_count(layer_name).await.unwrap()
 }
+
+async fn get_triple_count(layer: String) -> io::Result<()> {
+    let mut file = tokio::fs::File::open(layer).await.unwrap();
+    let header = ArchiveHeader::parse_from_reader(&mut file).await?;
+    let range = header.range_for(LayerFileEnum::PosSpOAdjacencyListNums).unwrap();
+    let mut buf = [0;8];
+    file.seek(SeekFrom::Current(range.end as i64 -8)).await?;
+    file.read_exact(&mut buf).await?;
+    let (size, _width) = parse_control_word(&buf);
+
+    println!("{size}");
+    Ok(())
+}
+
 
 async fn open_slice(
     file_name: PathBuf,
@@ -355,6 +373,7 @@ async fn main() {
         } => build_predicate_index(s_p_nums_file, predicate_index_dir)
             .await
             .unwrap(),
+        Commands::TripleCount { layer_file } => get_triple_count(layer_file).await.unwrap()
     }
 }
 
