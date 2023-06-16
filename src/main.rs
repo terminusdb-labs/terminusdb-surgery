@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read, SeekFrom},
+    io::{self, SeekFrom},
     path::PathBuf,
 };
 
@@ -323,7 +323,7 @@ async fn main() {
             };
         }
         Commands::ParseHeader { file_name, sort } => {
-            parse_and_print_header(file_name, sort);
+            parse_and_print_header(file_name, sort).await;
         }
         Commands::PrintDict {
             file_name,
