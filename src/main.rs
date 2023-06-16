@@ -358,12 +358,10 @@ async fn main() {
     }
 }
 
-fn parse_and_print_header<P: Into<PathBuf>>(file_name: P, sort: bool) {
-    let mut file = std::fs::File::open(file_name.into()).unwrap();
-    let mut data = Vec::new();
-    file.read_to_end(&mut data).unwrap();
+async fn parse_and_print_header<P: Into<PathBuf>>(file_name: P, sort: bool) {
+    let mut file = tokio::fs::File::open(file_name.into()).await.unwrap();
+    let header = ArchiveHeader::parse_from_reader(&mut file).await.unwrap();
 
-    let (header, _) = ArchiveHeader::parse(Bytes::from(data));
     let mut result = Vec::new();
     // annoying code to loop over the segments
     for i in 0..=(LayerFileEnum::Rollup as usize) {
