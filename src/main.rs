@@ -270,7 +270,7 @@ async fn build_object_index(
         nums_file: o_ps_nums_file,
     };
 
-    build_object_index_from_direct_files(sp_o_nums_file, sp_o_bits_file, o_ps_files, objects_file)
+    build_object_index_from_direct_files(sp_o_nums_file, sp_o_bits_file, o_ps_files, objects_file, Some("/tmp/".into()))
         .await
 }
 
