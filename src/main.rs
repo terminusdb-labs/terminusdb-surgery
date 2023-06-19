@@ -251,7 +251,7 @@ async fn build_object_index(
     let mut o_ps_nums_path = o_ps_dir_path.clone();
     o_ps_nums_path.push("nums");
     let mut o_ps_bits_path = o_ps_dir_path.clone();
-    o_ps_bits_path.push("nums");
+    o_ps_bits_path.push("bits");
     let mut o_ps_bit_index_blocks_path = o_ps_dir_path.clone();
     o_ps_bit_index_blocks_path.push("bit_index_blocks");
     let mut o_ps_bit_index_sblocks_path = o_ps_dir_path.clone();
