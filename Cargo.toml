@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = {version="4.0", features=["derive"]}
-terminus-store = {package = "terminus-store", path = "../terminusdb-store"}
+terminus-store = {package = "terminus-store", path = "../terminusdb-store", features=["eprint_log"]}
 tokio = {version = "1.0", features = ["full"]}
 bytes = "1.4"
 num = "0.4"
